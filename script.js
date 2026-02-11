@@ -375,7 +375,7 @@ function openPrintWindow(title, contentHtml) {
         body { font-family: Arial; padding: 20px; } table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }
         th, td { border: 1px solid black; padding: 5px; text-align: left; } th { background: #eee; text-align: center; } .center { text-align: center; }
         h1, h2 { text-align: center; margin: 5px; } h3 { margin-top: 20px; border-bottom: 2px solid black; } .page-break { page-break-after: always; }
-    </style></head><body><h1>MERENTAS DESA 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
+    </style></head><body><h1>KEJOHANAN MERENTAS DESA PENDIDIKAN KHAS 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
     w.document.close();
     setTimeout(() => { w.print(); w.close(); }, 500);
 }
@@ -528,3 +528,4 @@ function showToast(msg, type = 'info') {
     toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-show`;
     setTimeout(() => { toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-hide`; setTimeout(() => toast.classList.add('hidden'), 300); }, 3000);
 }
+

@@ -1,0 +1,28 @@
+/* Custom Styles overrides */
+
+.spinner {
+    border-top-color: #1e40af; /* Tailwind blue-800 */
+    -webkit-animation: spinner 1.5s linear infinite;
+    animation: spinner 1.5s linear infinite;
+}
+
+@keyframes spinner {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Table styling tweaks */
+th {
+    white-space: nowrap;
+}
+
+/* Toast Notification Animation */
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.toast-show {
+    display: block;
+    animation: slideIn 0.3s ease-out forwards;
+}

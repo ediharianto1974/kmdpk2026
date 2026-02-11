@@ -37,7 +37,6 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('login-modal').classList.add('hidden');
         adminElements.forEach(el => el.classList.remove('hidden')); 
         showToast(`Selamat datang, Admin!`, 'success');
-        // Data di-fetch, splash screen dikawal dalam fetchParticipants
         fetchParticipants(); 
     } else {
         if(adminMenu) adminMenu.classList.add('hidden');
@@ -72,7 +71,6 @@ function hideSplashScreen() {
     const splash = document.getElementById('splash-screen');
     const body = document.getElementById('body-content');
     if(splash) {
-        // Tambah delay sikit supaya nampak logo branding
         setTimeout(() => {
             splash.style.opacity = '0'; // Fade out
             setTimeout(() => {
@@ -105,7 +103,6 @@ async function fetchParticipants() {
         console.error("Error fetching data:", e);
         showToast("Gagal mengambil data.", "error");
     } finally {
-        // Hilangkan Splash Screen sama ada berjaya atau gagal
         hideSplashScreen();
     }
 }
@@ -152,7 +149,7 @@ window.processCSV = async function() {
     reader.readAsText(file);
 };
 
-// --- FUNGSI BARU: RENDER STATISTIK PENYERTAAN ---
+// --- FUNGSI RENDER STATISTIK ---
 function renderParticipationStats() {
     const totalP = document.getElementById('stat-total-p');
     const totalT = document.getElementById('stat-total-t');
@@ -378,7 +375,7 @@ function openPrintWindow(title, contentHtml) {
         body { font-family: Arial; padding: 20px; } table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }
         th, td { border: 1px solid black; padding: 5px; text-align: left; } th { background: #eee; text-align: center; } .center { text-align: center; }
         h1, h2 { text-align: center; margin: 5px; } h3 { margin-top: 20px; border-bottom: 2px solid black; } .page-break { page-break-after: always; }
-    </style></head><body><h1>KEJOHANAN MERENTAS DESA PENDIDIKAN KHAS (KMDPK) 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
+    </style></head><body><h1>MERENTAS DESA 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
     w.document.close();
     setTimeout(() => { w.print(); w.close(); }, 500);
 }
@@ -440,6 +437,85 @@ window.printSchoolStandings = function() {
     standings.sort((a,b)=>a.total !== b.total ? a.total-b.total : (a.fourth?.score||9999)-(b.fourth?.score||9999));
     let rows = standings.map((s, i) => `<tr><td class="center">${i+1}</td><td>${s.team}</td><td class="center">${s.total}</td><td style="font-size:9pt">${s.top3.map(x=>`#${x.rank} ${x.name}`).join('<br>')}</td><td class="center" style="color:red">${s.fourth?`#${s.fourth.rank} ${s.fourth.name}`:'-'}</td></tr>`).join('');
     openPrintWindow("RANKING KESELURUHAN SEKOLAH", `<table><thead><tr><th>Ked.</th><th>Sekolah</th><th>Mata</th><th>Penyumbang</th><th>Tie-Breaker</th></tr></thead><tbody>${rows}</tbody></table>`);
+};
+
+// --- PENGURUSAN DATA (BACKUP / RESTORE / RESET) ---
+
+// 1. BACKUP DATA (Download JSON)
+window.backupData = function() {
+    if (allParticipants.length === 0) {
+        showToast("Tiada data untuk di-backup.", "error");
+        return;
+    }
+    const dataStr = JSON.stringify(allParticipants, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup_merentas_desa_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast("Fail backup berjaya dimuat turun!", "success");
+};
+
+// 2. RESTORE DATA (Upload JSON)
+window.restoreData = async function() {
+    const fileInput = document.getElementById('backup-file');
+    const file = fileInput.files[0];
+    if (!file) { showToast("Sila pilih fail .json dahulu", "error"); return; }
+    if (!confirm("Adakah anda pasti? Data ini akan ditambah kepada data sedia ada.")) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error("Format fail tidak sah.");
+            showToast("Sedang memulihkan data...", "info");
+            
+            const batchSize = 400;
+            let batch = writeBatch(db);
+            let count = 0;
+            let totalRestored = 0;
+
+            for (const p of data) {
+                const docRef = p.id ? doc(db, "participants", p.id) : doc(collection(db, "participants"));
+                const { id, ...pData } = p; 
+                batch.set(docRef, pData);
+                count++;
+                totalRestored++;
+                if (count >= batchSize) { await batch.commit(); batch = writeBatch(db); count = 0; }
+            }
+            if (count > 0) await batch.commit();
+            showToast(`Berjaya memulihkan ${totalRestored} rekod!`, "success");
+            fileInput.value = ''; 
+            await fetchParticipants(); 
+        } catch (err) { console.error(err); showToast("Gagal restore: Format fail salah.", "error"); }
+    };
+    reader.readAsText(file);
+};
+
+// 3. PADAM SEMUA DATA (RESET FACTORY)
+window.clearAllData = async function() {
+    if (!confirm("AMARAN: Anda pasti mahu memadam SEMUA data peserta dan keputusan?")) return;
+    const verification = prompt("Taip 'PADAM' untuk sahkan tindakan ini:");
+    if (verification !== 'PADAM') { showToast("Tindakan dibatalkan.", "info"); return; }
+    showToast("Sedang memadam semua data...", "error");
+    try {
+        const q = query(collection(db, "participants"));
+        const snapshot = await getDocs(q);
+        const batchSize = 400;
+        let batch = writeBatch(db);
+        let count = 0;
+        for (const document of snapshot.docs) {
+            batch.delete(doc(db, "participants", document.id));
+            count++;
+            if (count >= batchSize) { await batch.commit(); batch = writeBatch(db); count = 0; }
+        }
+        if (count > 0) await batch.commit();
+        showToast("Pangkalan data telah dikosongkan.", "success");
+        await fetchParticipants(); 
+    } catch (e) { console.error(e); showToast("Gagal memadam data.", "error"); }
 };
 
 // --- UTILITIES ---

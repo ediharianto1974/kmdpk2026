@@ -72,12 +72,12 @@ function hideSplashScreen() {
     const body = document.getElementById('body-content');
     if(splash) {
         setTimeout(() => {
-            splash.style.opacity = '0'; // Fade out
+            splash.style.opacity = '0'; 
             setTimeout(() => {
-                splash.classList.add('hidden'); // Remove dari view
-                if(body) body.classList.remove('overflow-hidden'); // Benarkan scroll
-            }, 700); // Tunggu transition habis
-        }, 1500); // Minimum masa paparan (1.5 saat)
+                splash.classList.add('hidden'); 
+                if(body) body.classList.remove('overflow-hidden'); 
+            }, 700); 
+        }, 1500); 
     }
 }
 
@@ -344,28 +344,122 @@ window.loadIndividualAnalysis = function() {
     });
 };
 
+// --- FUNGSI ANALISIS BERPASUKAN (LOGIK DIPERBAIKI: GABUNGAN JANTINA) ---
 function calculateTeamAnalysis() {
     const container = document.getElementById('team-standings-container');
     if(!container) return;
     container.innerHTML = '';
+
     let standings = [];
+
     teams.forEach(t => {
-        let m = allParticipants.filter(p => p.team === t).sort((a,b)=>(a.score||9999)-(b.score||9999));
-        if (m.length < 3) return;
-        standings.push({ team: t, total: m.slice(0,3).reduce((s,x)=>s+(x.score||0),0), top3: m.slice(0,3), fourth: m[3] });
+        let members = allParticipants.filter(p => p.team === t);
+        
+        // Asingkan L dan P
+        let males = members.filter(p => p.gender === 'L').sort((a,b) => (a.score||9999) - (b.score||9999));
+        let females = members.filter(p => p.gender === 'P').sort((a,b) => (a.score||9999) - (b.score||9999));
+
+        // Syarat Wajib:
+        // 1. Jumlah peserta mesti >= 3
+        // 2. Mesti ada sekurang-kurangnya 1 Lelaki
+        // 3. Mesti ada sekurang-kurangnya 1 Perempuan
+        if (members.length < 3 || males.length === 0 || females.length === 0) return;
+
+        // Cari Kombinasi Terbaik
+        let combo1Score = Infinity; // 1 Lelaki + 2 Perempuan
+        let combo2Score = Infinity; // 2 Lelaki + 1 Perempuan
+        let bestTop3 = [];
+
+        // Kira Combo 1 (1L + 2P)
+        if (males.length >= 1 && females.length >= 2) {
+            combo1Score = (males[0].score||9999) + (females[0].score||9999) + (females[1].score||9999);
+        }
+
+        // Kira Combo 2 (2L + 1P)
+        if (males.length >= 2 && females.length >= 1) {
+            combo2Score = (males[0].score||9999) + (males[1].score||9999) + (females[0].score||9999);
+        }
+
+        // Bandingkan & Pilih
+        if (combo1Score === Infinity && combo2Score === Infinity) return; // Tak cukup korum
+
+        if (combo1Score <= combo2Score) {
+            // Pilih 1L + 2P
+            bestTop3 = [males[0], females[0], females[1]];
+        } else {
+            // Pilih 2L + 1P
+            bestTop3 = [males[0], males[1], females[0]];
+        }
+
+        // Kira Total
+        let total = bestTop3.reduce((s, x) => s + (x.score || 0), 0);
+
+        // Cari Tie-Breaker (Peserta Ke-4 Terbaik dari baki)
+        // Gabungkan semula semua ahli, tapis keluar yang dah masuk Top 3
+        let usedIds = bestTop3.map(p => p.id);
+        let remainder = members.filter(p => !usedIds.includes(p.id));
+        
+        // Sort baki peserta ikut ranking
+        remainder.sort((a,b) => (a.score||9999) - (b.score||9999));
+        
+        let fourth = remainder.length > 0 ? remainder[0] : null;
+
+        standings.push({ 
+            team: t, 
+            total: total, 
+            top3: bestTop3, 
+            fourth: fourth 
+        });
     });
-    standings.sort((a,b)=>a.total !== b.total ? a.total-b.total : (a.fourth?.score||9999)-(b.fourth?.score||9999));
+
+    // Susun Ranking Pasukan (Mata Rendah Menang) -> Tie Breaker (Peserta Ke-4)
+    standings.sort((a,b) => 
+        a.total !== b.total ? 
+        a.total - b.total : 
+        (a.fourth?.score||9999) - (b.fourth?.score||9999)
+    );
     
-    if(standings.length===0) { container.innerHTML = '<div class="text-center p-4">Tiada data.</div>'; return; }
+    if(standings.length === 0) { 
+        container.innerHTML = '<div class="text-center p-4">Tiada data atau pasukan tidak memenuhi syarat gabungan jantina (Min 1L & 1P).</div>'; 
+        return; 
+    }
     
     let rows = standings.map((s, i) => `
         <tr class="${i===0?'bg-yellow-50 border-l-4 border-yellow-500':'border-b'}">
             <td class="p-4 font-bold text-center text-xl">${i+1}</td>
-            <td class="p-4 font-bold">${s.team}</td><td class="p-4 text-center font-bold text-2xl text-blue-900">${s.total}</td>
-            <td class="p-4 text-sm">${s.top3.map(x=>`${x.name} (#${x.rank})`).join(', ')}</td>
-            <td class="p-4 text-center text-red-600 font-bold text-xs">${s.fourth?s.fourth.name+' (#'+s.fourth.rank+')':'-'}</td>
+            <td class="p-4 font-bold">${s.team}</td>
+            <td class="p-4 text-center font-bold text-2xl text-blue-900">${s.total}</td>
+            <td class="p-4 text-sm">
+                ${s.top3.map(x=>`
+                    <span class="inline-block px-2 py-1 rounded text-xs mr-1 mb-1 border ${x.gender==='L'?'bg-blue-50 border-blue-200 text-blue-800':'bg-pink-50 border-pink-200 text-pink-800'}">
+                        ${x.name} (#${x.rank})
+                    </span>
+                `).join('')}
+            </td>
+            <td class="p-4 text-center text-red-600 font-bold text-xs">
+                ${s.fourth ? `${s.fourth.name} (#${s.fourth.rank})` : '-'}
+            </td>
         </tr>`).join('');
-    container.innerHTML = `<div class="bg-white rounded shadow overflow-hidden"><table class="w-full text-left"><thead class="bg-gray-100"><tr><th class="p-4 text-center">Ked.</th><th class="p-4">Sekolah</th><th class="p-4 text-center">Mata</th><th class="p-4">Penyumbang</th><th class="p-4 text-center">Tie-Breaker</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        
+    container.innerHTML = `
+        <div class="bg-white rounded shadow overflow-hidden border">
+            <div class="bg-gray-800 text-white p-3 px-6">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-trophy text-yellow-400 mr-2"></i> KEDUDUKAN KESELURUHAN SEKOLAH</h3>
+                <p class="text-xs text-gray-400 mt-1">Syarat: Top 3 Gabungan Jantina (Min 1L & 1P)</p>
+            </div>
+            <table class="w-full text-left">
+                <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                    <tr>
+                        <th class="p-4 text-center">Ked.</th>
+                        <th class="p-4">Sekolah</th>
+                        <th class="p-4 text-center">Mata</th>
+                        <th class="p-4">Penyumbang (Top 3)</th>
+                        <th class="p-4 text-center">Tie-Breaker (Ke-4)</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
 }
 
 // --- FUNGSI CETAK ---
@@ -375,7 +469,7 @@ function openPrintWindow(title, contentHtml) {
         body { font-family: Arial; padding: 20px; } table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }
         th, td { border: 1px solid black; padding: 5px; text-align: left; } th { background: #eee; text-align: center; } .center { text-align: center; }
         h1, h2 { text-align: center; margin: 5px; } h3 { margin-top: 20px; border-bottom: 2px solid black; } .page-break { page-break-after: always; }
-    </style></head><body><h1>KEJOHANAN MERENTAS DESA PENDIDIKAN KHAS 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
+    </style></head><body><h1>MERENTAS DESA 2026</h1><h2>${title}</h2>${contentHtml}</body></html>`);
     w.document.close();
     setTimeout(() => { w.print(); w.close(); }, 500);
 }
@@ -427,21 +521,41 @@ window.printFullResults = function() {
     openPrintWindow(`KEPUTUSAN: ${category} (${gender})`, `<table><thead><tr><th>Rank</th><th>No</th><th>Nama</th><th>Sekolah</th><th>Masa</th></tr></thead><tbody>${rows}</tbody></table>`);
 };
 
-// 3. CETAK RANKING SEKOLAH
+// 3. CETAK RANKING SEKOLAH (IKUT LOGIK BARU)
 window.printSchoolStandings = function() {
     let standings = [];
+    
+    // Guna logik yang sama seperti calculateTeamAnalysis
     teams.forEach(t => {
-        let m = allParticipants.filter(p => p.team === t).sort((a,b)=>(a.score||9999)-(b.score||9999));
-        if (m.length >= 3) standings.push({ team: t, total: m.slice(0,3).reduce((s,x)=>s+(x.score||0),0), top3: m.slice(0,3), fourth: m[3] });
+        let members = allParticipants.filter(p => p.team === t);
+        let males = members.filter(p => p.gender === 'L').sort((a,b) => (a.score||9999) - (b.score||9999));
+        let females = members.filter(p => p.gender === 'P').sort((a,b) => (a.score||9999) - (b.score||9999));
+
+        if (members.length < 3 || males.length === 0 || females.length === 0) return;
+
+        let combo1Score = Infinity, combo2Score = Infinity, bestTop3 = [];
+        if (males.length >= 1 && females.length >= 2) combo1Score = (males[0].score||9999) + (females[0].score||9999) + (females[1].score||9999);
+        if (males.length >= 2 && females.length >= 1) combo2Score = (males[0].score||9999) + (males[1].score||9999) + (females[0].score||9999);
+
+        if (combo1Score === Infinity && combo2Score === Infinity) return;
+        if (combo1Score <= combo2Score) bestTop3 = [males[0], females[0], females[1]];
+        else bestTop3 = [males[0], males[1], females[0]];
+
+        let total = bestTop3.reduce((s, x) => s + (x.score || 0), 0);
+        let usedIds = bestTop3.map(p => p.id);
+        let remainder = members.filter(p => !usedIds.includes(p.id)).sort((a,b) => (a.score||9999) - (b.score||9999));
+        let fourth = remainder.length > 0 ? remainder[0] : null;
+
+        standings.push({ team: t, total: total, top3: bestTop3, fourth: fourth });
     });
-    standings.sort((a,b)=>a.total !== b.total ? a.total-b.total : (a.fourth?.score||9999)-(b.fourth?.score||9999));
+
+    standings.sort((a,b) => a.total !== b.total ? a.total-b.total : (a.fourth?.score||9999)-(b.fourth?.score||9999));
+    
     let rows = standings.map((s, i) => `<tr><td class="center">${i+1}</td><td>${s.team}</td><td class="center">${s.total}</td><td style="font-size:9pt">${s.top3.map(x=>`#${x.rank} ${x.name}`).join('<br>')}</td><td class="center" style="color:red">${s.fourth?`#${s.fourth.rank} ${s.fourth.name}`:'-'}</td></tr>`).join('');
-    openPrintWindow("RANKING KESELURUHAN SEKOLAH", `<table><thead><tr><th>Ked.</th><th>Sekolah</th><th>Mata</th><th>Penyumbang</th><th>Tie-Breaker</th></tr></thead><tbody>${rows}</tbody></table>`);
+    openPrintWindow("RANKING KESELURUHAN SEKOLAH", `<table><thead><tr><th>Ked.</th><th>Sekolah</th><th>Mata</th><th>Penyumbang (Top 3)</th><th>Tie-Breaker</th></tr></thead><tbody>${rows}</tbody></table><p style="text-align:center; font-size:10pt;">*Mata dikira berdasarkan gabungan jantina (Min 1 Lelaki & 1 Perempuan).</p>`);
 };
 
 // --- PENGURUSAN DATA (BACKUP / RESTORE / RESET) ---
-
-// 1. BACKUP DATA (Download JSON)
 window.backupData = function() {
     if (allParticipants.length === 0) {
         showToast("Tiada data untuk di-backup.", "error");
@@ -459,7 +573,6 @@ window.backupData = function() {
     showToast("Fail backup berjaya dimuat turun!", "success");
 };
 
-// 2. RESTORE DATA (Upload JSON)
 window.restoreData = async function() {
     const fileInput = document.getElementById('backup-file');
     const file = fileInput.files[0];
@@ -472,12 +585,10 @@ window.restoreData = async function() {
             const data = JSON.parse(e.target.result);
             if (!Array.isArray(data)) throw new Error("Format fail tidak sah.");
             showToast("Sedang memulihkan data...", "info");
-            
             const batchSize = 400;
             let batch = writeBatch(db);
             let count = 0;
             let totalRestored = 0;
-
             for (const p of data) {
                 const docRef = p.id ? doc(db, "participants", p.id) : doc(collection(db, "participants"));
                 const { id, ...pData } = p; 
@@ -495,7 +606,6 @@ window.restoreData = async function() {
     reader.readAsText(file);
 };
 
-// 3. PADAM SEMUA DATA (RESET FACTORY)
 window.clearAllData = async function() {
     if (!confirm("AMARAN: Anda pasti mahu memadam SEMUA data peserta dan keputusan?")) return;
     const verification = prompt("Taip 'PADAM' untuk sahkan tindakan ini:");
@@ -528,4 +638,3 @@ function showToast(msg, type = 'info') {
     toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-show`;
     setTimeout(() => { toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-hide`; setTimeout(() => toast.classList.add('hidden'), 300); }, 3000);
 }
-

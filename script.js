@@ -344,7 +344,7 @@ window.loadIndividualAnalysis = function() {
     });
 };
 
-// --- FUNGSI ANALISIS BERPASUKAN (LOGIK DIPERBAIKI: GABUNGAN JANTINA) ---
+// --- FUNGSI ANALISIS BERPASUKAN (LOGIK DIPERBAIKI: SORTING & TOP 3) ---
 function calculateTeamAnalysis() {
     const container = document.getElementById('team-standings-container');
     if(!container) return;
@@ -372,11 +372,13 @@ function calculateTeamAnalysis() {
 
         // Kira Combo 1 (1L + 2P)
         if (males.length >= 1 && females.length >= 2) {
+            // PENTING: Jika score null, guna 9999 supaya tidak dikira sebagai 0 (juara)
             combo1Score = (males[0].score||9999) + (females[0].score||9999) + (females[1].score||9999);
         }
 
         // Kira Combo 2 (2L + 1P)
         if (males.length >= 2 && females.length >= 1) {
+             // PENTING: Jika score null, guna 9999
             combo2Score = (males[0].score||9999) + (males[1].score||9999) + (females[0].score||9999);
         }
 
@@ -384,24 +386,18 @@ function calculateTeamAnalysis() {
         if (combo1Score === Infinity && combo2Score === Infinity) return; // Tak cukup korum
 
         if (combo1Score <= combo2Score) {
-            // Pilih 1L + 2P
             bestTop3 = [males[0], females[0], females[1]];
         } else {
-            // Pilih 2L + 1P
             bestTop3 = [males[0], males[1], females[0]];
         }
 
-        // Kira Total
-        let total = bestTop3.reduce((s, x) => s + (x.score || 0), 0);
+        // Kira Total (Guna 9999 jika tiada rank, supaya pasukan belum lari jatuh ke bawah)
+        let total = bestTop3.reduce((s, x) => s + (x.score || 9999), 0);
 
         // Cari Tie-Breaker (Peserta Ke-4 Terbaik dari baki)
-        // Gabungkan semula semua ahli, tapis keluar yang dah masuk Top 3
         let usedIds = bestTop3.map(p => p.id);
         let remainder = members.filter(p => !usedIds.includes(p.id));
-        
-        // Sort baki peserta ikut ranking
         remainder.sort((a,b) => (a.score||9999) - (b.score||9999));
-        
         let fourth = remainder.length > 0 ? remainder[0] : null;
 
         standings.push({ 
@@ -412,7 +408,7 @@ function calculateTeamAnalysis() {
         });
     });
 
-    // Susun Ranking Pasukan (Mata Rendah Menang) -> Tie Breaker (Peserta Ke-4)
+    // SUSUN KEPUTUSAN: Mata Terendah di ATAS
     standings.sort((a,b) => 
         a.total !== b.total ? 
         a.total - b.total : 
@@ -420,44 +416,70 @@ function calculateTeamAnalysis() {
     );
     
     if(standings.length === 0) { 
-        container.innerHTML = '<div class="text-center p-4">Tiada data atau pasukan tidak memenuhi syarat gabungan jantina (Min 1L & 1P).</div>'; 
+        container.innerHTML = '<div class="text-center p-4 bg-red-50 text-red-600 rounded">Tiada data atau pasukan tidak memenuhi syarat gabungan jantina.</div>'; 
         return; 
     }
     
-    let rows = standings.map((s, i) => `
-        <tr class="${i===0?'bg-yellow-50 border-l-4 border-yellow-500':'border-b'}">
-            <td class="p-4 font-bold text-center text-xl">${i+1}</td>
-            <td class="p-4 font-bold">${s.team}</td>
-            <td class="p-4 text-center font-bold text-2xl text-blue-900">${s.total}</td>
-            <td class="p-4 text-sm">
+    // RENDER TABLE DENGAN HIGHLIGHT TOP 3
+    let rows = standings.map((s, i) => {
+        // Tentukan style untuk Top 3
+        let rowClass = "border-b hover:bg-gray-50";
+        let rankBadge = `<span class="font-bold text-gray-700">${i+1}</span>`;
+        
+        if (i === 0) {
+            // Emas / Juara
+            rowClass = "bg-yellow-100 border-l-4 border-yellow-500 shadow-sm transform scale-[1.01] transition-all";
+            rankBadge = `<div class="flex items-center justify-center w-8 h-8 bg-yellow-400 text-white rounded-full mx-auto shadow"><i class="fa-solid fa-trophy"></i></div>`;
+        } else if (i === 1) {
+            // Perak
+            rowClass = "bg-gray-200 border-l-4 border-gray-400";
+            rankBadge = `<div class="flex items-center justify-center w-8 h-8 bg-gray-400 text-white rounded-full mx-auto shadow">2</div>`;
+        } else if (i === 2) {
+            // Gangsa
+            rowClass = "bg-orange-100 border-l-4 border-orange-400";
+            rankBadge = `<div class="flex items-center justify-center w-8 h-8 bg-orange-400 text-white rounded-full mx-auto shadow">3</div>`;
+        }
+
+        // Paparan Total Score (Jika score sangat besar > 1000, tulis 'Belum Tamat')
+        let displayTotal = s.total >= 1000 ? '<span class="text-xs text-gray-500">Belum Lengkap</span>' : s.total;
+
+        return `
+        <tr class="${rowClass}">
+            <td class="p-4 text-center align-middle">${rankBadge}</td>
+            <td class="p-4 font-bold align-middle text-gray-800">${s.team}</td>
+            <td class="p-4 text-center font-bold text-2xl text-blue-900 align-middle">${displayTotal}</td>
+            <td class="p-4 text-sm align-middle">
                 ${s.top3.map(x=>`
-                    <span class="inline-block px-2 py-1 rounded text-xs mr-1 mb-1 border ${x.gender==='L'?'bg-blue-50 border-blue-200 text-blue-800':'bg-pink-50 border-pink-200 text-pink-800'}">
-                        ${x.name} (#${x.rank})
-                    </span>
+                    <div class="inline-block px-2 py-1 rounded text-xs mr-1 mb-1 border shadow-sm ${x.score ? (x.gender==='L'?'bg-blue-100 border-blue-300 text-blue-900':'bg-pink-100 border-pink-300 text-pink-900') : 'bg-gray-200 text-gray-500 border-gray-300'}">
+                        ${x.name} <strong class="ml-1">${x.score ? '#' + x.rank : '(Tiada Rank)'}</strong>
+                    </div>
                 `).join('')}
             </td>
-            <td class="p-4 text-center text-red-600 font-bold text-xs">
-                ${s.fourth ? `${s.fourth.name} (#${s.fourth.rank})` : '-'}
+            <td class="p-4 text-center text-red-600 font-bold text-xs align-middle">
+                ${s.fourth ? `${s.fourth.name} <br> ${s.fourth.score ? '(#' + s.fourth.rank + ')' : '(Tiada Rank)'}` : '-'}
             </td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
         
     container.innerHTML = `
-        <div class="bg-white rounded shadow overflow-hidden border">
-            <div class="bg-gray-800 text-white p-3 px-6">
-                <h3 class="font-bold text-lg"><i class="fa-solid fa-trophy text-yellow-400 mr-2"></i> KEDUDUKAN KESELURUHAN SEKOLAH</h3>
-                <p class="text-xs text-gray-400 mt-1">Syarat: Top 3 Gabungan Jantina (Min 1L & 1P)</p>
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+            <div class="bg-gradient-to-r from-blue-900 to-blue-700 text-white p-4 px-6 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-xl"><i class="fa-solid fa-medal text-yellow-300 mr-2"></i> KEDUDUKAN KESELURUHAN SEKOLAH</h3>
+                    <p class="text-xs text-blue-200 mt-1">Dikemaskini secara automatik • Mata Terendah Menang</p>
+                </div>
             </div>
-            <table class="w-full text-left">
-                <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-50 text-gray-600 uppercase text-xs tracking-wider">
                     <tr>
-                        <th class="p-4 text-center">Ked.</th>
-                        <th class="p-4">Sekolah</th>
-                        <th class="p-4 text-center">Mata</th>
-                        <th class="p-4">Penyumbang (Top 3)</th>
-                        <th class="p-4 text-center">Tie-Breaker (Ke-4)</th>
+                        <th class="p-4 text-center w-16">Ked.</th>
+                        <th class="p-4 w-1/4">Sekolah</th>
+                        <th class="p-4 text-center w-24">Mata</th>
+                        <th class="p-4">Penyumbang Utama (Top 3)</th>
+                        <th class="p-4 text-center w-32">Tie-Breaker</th>
                     </tr>
                 </thead>
-                <tbody>${rows}</tbody>
+                <tbody class="divide-y divide-gray-200">${rows}</tbody>
             </table>
         </div>`;
 }
@@ -638,3 +660,4 @@ function showToast(msg, type = 'info') {
     toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-show`;
     setTimeout(() => { toast.className = `fixed top-5 right-5 px-6 py-4 rounded shadow-lg text-white z-50 ${bgClass} toast-hide`; setTimeout(() => toast.classList.add('hidden'), 300); }, 3000);
 }
+
